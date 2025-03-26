@@ -104,8 +104,23 @@ void loop()
 
                 // Wait for the RasPi to send a response
                 Serial.println("Waiting for a response from the RasPi");
+                
+                // Timeout after 1 second
+                uint32_t timeoutCounter = millis();
+                bool timeout = false;
+                while (!Serial2.available() && !timeout)
+                {
+                    timeout = millis() - timeoutCounter < 1000;
+                }
+                
+                if (timeout)
+                {
+                    Serial.println("Timeout reached");
+                    continue;
+                }
+                
+                // Read the response from the RasPi
                 uint8_t i = 0;
-                while (!Serial2.available());
                 while (i < 3)
                 {
                     uartRecv[i] = Serial2.read();
