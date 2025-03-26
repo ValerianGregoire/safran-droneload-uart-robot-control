@@ -33,7 +33,7 @@ char leftCmd[10];
 
 // I2C address of the RasPi
 // Define DEBUG to scan for the I2C address of the RasPi
-const uint8_t raspiAddr = 0x08;
+const uint8_t espAddr = 0x08;
 const uint8_t correctCmd = 0x01;
 
 // Buffer to store the received data
@@ -124,7 +124,7 @@ void loop()
                     arucoAligned[i] = true;
 
                     // Send a validation message to the RasPi
-                    Wire.beginTransmission(raspiAddr);
+                    Wire.beginTransmission(espAddr);
                     Wire.write(correctCmd);
                     Wire.endTransmission();
                 }
