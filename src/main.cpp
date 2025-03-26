@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <stdio.h>
 #include "dataFrameI2C.hpp"
 
 #define DEBUG
@@ -12,6 +13,7 @@ Valérian Grégoire--Bégranger
 */
 
 // Baud rate for serial communication
+const uint8_t baudConsole = 115200;
 const uint8_t baudRobot = 57600;
 
 // Aruco markers to align the robot with
@@ -21,35 +23,47 @@ bool arucoDetected[numArucoMarkers] = {false, false};
 bool arucoAligned[numArucoMarkers] = {false, false};
 
 // Commands to be sent to the robot
-enum class command : char
-{
-    STOP = 'S',
-    LEFT = 'G',
-    RIGHT = 'D'
-};
-command cmd;
+// The commands are initialized in the setup function
+const uint8_t robotSpeed = 100;
+char stopCmd[10];
+char rightCmd[10]; 
+char leftCmd[10]; 
 
 // I2C address of the RasPi
+// Define DEBUG to scan for the I2C address of the RasPi
 const uint8_t raspiAddr = 0x08;
 
 // Buffer to store the received data
 dataFrameI2CRecv dataBuffer;
 dataFrameI2CRecv data;
+char uartRecv[4];
+
 
 void setup()
 {
     // Initialize serial communication
+    Serial.begin(baudConsole);
     Serial2.begin(baudRobot);
-
+    Serial.println("Serial communication initialized");
+    
     // Initialize I2C communication
     Wire.begin();
     Wire.onReceive(receiveEvent);
+    Serial.println("I2C communication initialized");
+    
+    // Initialize the stop, right, and left commands
+    sprintf(stopCmd, "S %d", robotSpeed);
+    sprintf(rightCmd, "D %d", robotSpeed);
+    sprintf(leftCmd, "G %d", robotSpeed);
+    Serial.println("UART commands initialized");
 }
 
 void loop()
 {
 // Scan I2C devices on the bus
 #ifdef DEBUG
+    Serial.println("DEBUG mode enabled");
+    Serial.println("Scanning I2C devices...");
     scanI2C();
 #endif
 
@@ -68,28 +82,44 @@ void loop()
     for (uint8_t i = 0; i < numArucoMarkers; i++)
     {
         if (arucoDetected[i])
-        {
+        {   
+            // Stop the robot and wait for a OUI or NON answer
             if (abs(data.arucoX) <= 5)
             {
-                arucoAligned[i] = true;
-                cmd = command::STOP;
-                Serial2.write(static_cast<char>(cmd));
+                Serial2.println(stopCmd);
+                
+                // Reset the uartRecv buffer
+                for (uint8_t i = 0; i < 4; i++)
+                {
+                    uartRecv[i] = 0;
+                }
+                
+                // Wait for the RasPi to send a response
+                uint8_t i = 0;
+                while (!Serial2.available());
+                while (i < 3)
+                {
+                    uartRecv[i] = Serial2.read();
+                    i++;
+                }
+                uartRecv[3] = '\0';
+
+                if (strcmp(uartRecv, "OUI") == 0)
+                {
+                    arucoDetected[i] = false;
+                    arucoAligned[i] = true;
+                }
             }
             // Move the robot to the left
             else if (data.arucoX > 5)
             {
-                arucoAligned[i] = false;
-                cmd = command::LEFT;
-                Serial2.write(static_cast<char>(cmd));
+                Serial2.println(leftCmd);
             }
             // Move the robot to the right
             else if (data.arucoX < -5)
             {
-                arucoAligned[i] = false;
-                cmd = command::RIGHT;
-                Serial2.write(static_cast<char>(cmd));
+                Serial2.println(rightCmd);
             }
-
         }
     }
 }
@@ -101,7 +131,6 @@ void scanI2C()
 {
     byte error, address;
     int nDevices;
-    Serial.println("Scanning...");
     nDevices = 0;
     for (address = 1; address < 127; address++)
     {
