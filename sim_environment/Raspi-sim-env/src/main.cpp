@@ -122,6 +122,5 @@ void receiveEvent(int numBytes)
             Serial.println("Scanned all aruco markers");
             return;
         }
-        
     }
 }
