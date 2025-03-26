@@ -7,14 +7,15 @@
 
 /*
 The esp32 receives information on the current aruco marker detected by the camera
-and processes it to send the corresponding command to the robot on the ground.
+through I2C and processes it to send the corresponding command to the robot on
+the ground in UART.
 
 Valérian Grégoire--Bégranger
 */
 
 // Baud rate for serial communication
-const uint8_t baudConsole = 115200;
-const uint8_t baudRobot = 57600;
+const uint32_t baudConsole = 115200;
+const uint32_t baudRobot = 57600;
 
 // Aruco markers to align the robot with
 const uint8_t numArucoMarkers = 2;
@@ -25,19 +26,24 @@ bool arucoAligned[numArucoMarkers] = {false, false};
 // Commands to be sent to the robot
 // The commands are initialized in the setup function
 const uint8_t robotSpeed = 100;
+const uint8_t stopBound = 2;
 char stopCmd[10];
-char rightCmd[10]; 
-char leftCmd[10]; 
+char rightCmd[10];
+char leftCmd[10];
 
 // I2C address of the RasPi
 // Define DEBUG to scan for the I2C address of the RasPi
 const uint8_t raspiAddr = 0x08;
+const uint8_t correctCmd = 0x01;
 
 // Buffer to store the received data
 dataFrameI2CRecv dataBuffer;
 dataFrameI2CRecv data;
 char uartRecv[4];
 
+// Function declarations
+void scanI2C();
+void receiveEvent(int numBytes);
 
 void setup()
 {
@@ -45,12 +51,12 @@ void setup()
     Serial.begin(baudConsole);
     Serial2.begin(baudRobot);
     Serial.println("Serial communication initialized");
-    
+
     // Initialize I2C communication
     Wire.begin();
     Wire.onReceive(receiveEvent);
     Serial.println("I2C communication initialized");
-    
+
     // Initialize the stop, right, and left commands
     sprintf(stopCmd, "S %d", robotSpeed);
     sprintf(rightCmd, "D %d", robotSpeed);
@@ -73,7 +79,7 @@ void loop()
         if (dataBuffer.arucoID == arucoIDs[i])
         {
             arucoDetected[i] = true;
-            memccpy(&data, &dataBuffer, sizeof(dataBuffer), sizeof(dataBuffer));
+            memcpy(&data, &dataBuffer, sizeof(dataBuffer));
             break;
         }
     }
@@ -82,19 +88,22 @@ void loop()
     for (uint8_t i = 0; i < numArucoMarkers; i++)
     {
         if (arucoDetected[i])
-        {   
+        {
             // Stop the robot and wait for a OUI or NON answer
-            if (abs(data.arucoX) <= 5)
+            if (abs(data.arucoX) <= stopBound)
             {
+                Serial.println("Stop the robot");
                 Serial2.println(stopCmd);
-                
+
                 // Reset the uartRecv buffer
+                Serial.println("Resetting the uartRecv buffer");
                 for (uint8_t i = 0; i < 4; i++)
                 {
                     uartRecv[i] = 0;
                 }
-                
+
                 // Wait for the RasPi to send a response
+                Serial.println("Waiting for a response from the RasPi");
                 uint8_t i = 0;
                 while (!Serial2.available());
                 while (i < 3)
@@ -103,21 +112,33 @@ void loop()
                     i++;
                 }
                 uartRecv[3] = '\0';
-
+                
+                // Compare the response with the expected command
+                Serial.print("Received response : ");
+                Serial.println(uartRecv);
                 if (strcmp(uartRecv, "OUI") == 0)
                 {
+                    Serial.print("arucoAligned set for aruco ");
+                    Serial.println(data.arucoID);
                     arucoDetected[i] = false;
                     arucoAligned[i] = true;
+
+                    // Send a validation message to the RasPi
+                    Wire.beginTransmission(raspiAddr);
+                    Wire.write(correctCmd);
+                    Wire.endTransmission();
                 }
             }
             // Move the robot to the left
-            else if (data.arucoX > 5)
+            else if (data.arucoX > stopBound)
             {
+                Serial.println("Move to the left");
                 Serial2.println(leftCmd);
             }
             // Move the robot to the right
-            else if (data.arucoX < -5)
+            else if (data.arucoX < -stopBound)
             {
+                Serial.println("Move to the right");
                 Serial2.println(rightCmd);
             }
         }
